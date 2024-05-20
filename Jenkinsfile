@@ -8,14 +8,15 @@ pipeline {
 
     stages {
         stage('Clone Repository') {
-            steps {
-                git 'https://github.com/expressjs/express.git'
+        steps {
+            git branch: 'main', url: 'https://github.com/bhupendrargoud/cicd_task.git'
             }
         }
-        stage('Build Docker Image') {
+        
+            stage('Build Docker Image') {
             steps {
                 script {
-                    docker.build("${DOCKER_IMAGE}:${env.BUILD_ID}")
+                    sh "docker build -t ${DOCKER_IMAGE}:${env.BUILD_ID} ."
                 }
             }
         }
@@ -32,7 +33,7 @@ pipeline {
                     }
                 }
             }
-        }
+    
         stage('Deploy to Staging') {
             steps {
                 script {
@@ -43,9 +44,9 @@ pipeline {
                       app:
                         image: hello-world-app:${env.BUILD_ID}
                         ports:
-                          - "8080:8080"
+                        - "8080:3000"
                         environment:
-                          - PORT=8080
+                        - PORT=3000
                     """
 
                     sh 'docker-compose down'
@@ -55,16 +56,36 @@ pipeline {
         }
     }
 
-    post {
-        failure {
-            stage('Rollback') {
-                steps {
-                    script {
-                        sh 'docker-compose down'
-                        sh 'docker run -d -p 8080:8080 --name hello-world-app hello-world-app:v1'
+   post {
+    
+    failure {
+        script {
+            def lastSuccessfulBuild = currentBuild.previousSuccessfulBuild
+                    if (lastSuccessfulBuild != null) {
+                        def previousBuildNumber = lastSuccessfulBuild.getNumber()
+                        echo "Rolling back to previous build: $previousBuildNumber"
+
+             writeFile file: 'docker-compose.yml', text: """
+                    version: '3.8'
+                    services:
+                      app:
+                        image: hello-world-app:${previousBuildNumber}
+                        ports:
+                        - "8080:3000"
+                        environment:
+                        - PORT=3000
+                    """
+
+                    sh 'docker-compose down'
+                    sh 'docker-compose up -d'
+           
+                    } else {
+                        echo "No previous successful builds found."
                     }
-                }
+            
+           
             }
         }
     }
+
 }
